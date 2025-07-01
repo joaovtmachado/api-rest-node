@@ -6,6 +6,12 @@ import { checkSessionIdExists } from '../middlewares/check-session-id-exists'
 // request body : HTTP
 // cookies -> mater contexto entre requisicoes
 
+// unitarios: unidade da aplicacao
+// integracao: comunicacao entre 2 ou mais unidades
+// e2e: ponta a ponta, simulam um usuarios operando na aplicacao
+
+// piramide de testes: E2E (nao dependem de nenhuma tecnologia, nao dependem da arquitetura)
+// e2e é lento
 export async function transactionsRoutes(app: FastifyInstance) {
   app.get(
     '/',
@@ -62,41 +68,35 @@ export async function transactionsRoutes(app: FastifyInstance) {
     },
   )
 
-  app.post(
-    '/',
-    {
-      preHandler: [checkSessionIdExists],
-    },
-    async (request, reply) => {
-      const createTransactionsBodySchema = z.object({
-        title: z.string(),
-        amount: z.number(),
-        type: z.enum(['credit', 'debit']),
+  app.post('/', async (request, reply) => {
+    const createTransactionsBodySchema = z.object({
+      title: z.string(),
+      amount: z.number(),
+      type: z.enum(['credit', 'debit']),
+    })
+
+    const { title, amount, type } = createTransactionsBodySchema.parse(
+      request.body,
+    )
+
+    let sessionId = request.cookies.sessionId
+
+    if (!sessionId) {
+      sessionId = randomUUID()
+
+      reply.cookie('sessionId', sessionId, {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 7, // sete dias
       })
+    }
 
-      const { title, amount, type } = createTransactionsBodySchema.parse(
-        request.body,
-      )
+    await knex('transactions').insert({
+      id: crypto.randomUUID(),
+      title,
+      amount: type === 'credit' ? amount : amount * -1,
+      session_id: sessionId,
+    })
 
-      let sessionId = request.cookies.sessionId
-
-      if (!sessionId) {
-        sessionId = randomUUID()
-
-        reply.cookie('sessionId', sessionId, {
-          path: '/',
-          maxAge: 60 * 60 * 24 * 7, // sete dias
-        })
-      }
-
-      await knex('transactions').insert({
-        id: crypto.randomUUID(),
-        title,
-        amount: type === 'credit' ? amount : amount * -1,
-        session_id: sessionId,
-      })
-
-      return reply.status(201).send()
-    },
-  )
+    return reply.status(201).send()
+  })
 }
